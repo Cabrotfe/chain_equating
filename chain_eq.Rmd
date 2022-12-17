@@ -1,0 +1,145 @@
+---
+title: "Chain Equating"
+author: "Cristian Brotfeld"
+date: '2022-12-17'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(mirt, equateIRT)
+```
+
+
+```{r}
+###### Simulemos escalamiento verticarl y horizontal:
+
+# En el horizontal tenemos dos formas que queremos comparar. Las formas son similares y los grupos
+# también. En el vertical no es así.
+set.seed(1234)
+
+## Vamos a simular 3 cursos, cada uno con 20 preguntas:
+
+d1 = matrix(runif(n=20,-3,3),ncol=1)
+a1 = matrix(runif(n=20,0.8,1.2),ncol=1)
+c1 = matrix(runif(n=20,0,0.2),ncol=1)
+
+d2 = matrix(c(d1[11:20,1],runif(n=10,-4,2)),ncol=1)
+a2 = matrix(c(a1[11:20,1],runif(n=10,0.8,1.2)),ncol=1)
+c2 = matrix(c(c1[11:20,1],runif(n=10,0,0.2)),ncol=1)
+
+d3 = matrix(c(d2[11:20,1],runif(n=10,-5,1)),ncol=1)
+a3 = matrix(c(a2[11:20,1],runif(n=10,0.8,1.2)),ncol=1)
+c3 = matrix(c(c2[11:20,1],runif(n=10,0,0.2)),ncol=1)
+
+d4 = matrix(c(d3[11:20,1],runif(n=10,-6,-0)),ncol=1)
+a4 = matrix(c(a3[11:20,1],runif(n=10,0.8,1.2)),ncol=1)
+c4 = matrix(c(c3[11:20,1],runif(n=10,0,0.2)),ncol=1)
+
+theta1 = matrix(rnorm(300, 0,1),ncol=1)
+theta2 = matrix(rnorm(300, 1,1),ncol=1)
+theta3 = matrix(rnorm(300, 2,1),ncol=1)
+theta4 = matrix(rnorm(300, 3,1),ncol=1)
+
+
+
+dat1 = data.frame(simdata(d=d1, a=a1, guess = c1, Theta = theta1, itemtype = "3PL"))
+dat2 = data.frame(simdata(d=d2, a=a2, guess = c2, Theta = theta2, itemtype = "3PL"))
+dat3 = data.frame(simdata(d=d3, a=a3, guess = c3, Theta = theta3, itemtype = "3PL"))
+dat4 = data.frame(simdata(d=d4, a=a4, guess = c4, Theta = theta4, itemtype = "3PL"))
+
+
+names(dat1)
+colnames(dat2) = paste("Item", c(11:30), sep = "_")
+colnames(dat3) = paste("Item", c(21:40), sep = "_")
+colnames(dat4) = paste("Item", c(31:50), sep = "_")
+
+library(sjPlot)
+
+sjPlot::sjt.itemanalysis(dat1)
+sjPlot::sjt.itemanalysis(dat2)
+sjPlot::sjt.itemanalysis(dat3)
+
+
+library(skimr)
+skimr::skim(dat1)
+skimr::skim(dat2)
+skimr::skim(dat3)
+
+# Gráfico de los ítems equating -------------------------------------------
+
+pacman::p_load(dplyr, ggplot2, tidyr)
+
+
+
+mod_1 = mirt(dat1, model = 1, itemtype = "2PL", SE=T)
+mod_2 = mirt(dat2, model = 1, itemtype = "2PL", SE=T)
+mod_3 = mirt(dat3, model = 1, itemtype = "2PL", SE=T)
+mod_4 = mirt(dat4, model = 1, itemtype = "2PL", SE=T)
+
+coef(mod_1, IRTpars=T, simplify=T)
+coef(mod_2, IRTpars=T, simplify=T)
+coef(mod_3, IRTpars=T, simplify=T)
+coef(mod_4, IRTpars=T, simplify=T)
+
+## Tenemos que obviamente los parámetros de los ítems comunes no son iguales,
+## Pero sabemos que sí lo son, lo que pasa es que hay que generar una escala 
+## común.
+
+library(equateIRT)
+
+coef(mod_1, IRTpars=T, simplify=T)$items
+coef(mod_2, IRTpars=T, simplify=T)$items
+coef(mod_3, IRTpars=T, simplify=T)$items
+coef(mod_4, IRTpars=T, simplify=T)$items
+
+
+forma1 = import.mirt(mod_1)
+forma2 = import.mirt(mod_2)
+forma3 = import.mirt(mod_3)
+forma4 = import.mirt(mod_4)
+
+linkp(coef = list(forma1$coef, forma2$coef, forma3$coef, forma4$coef)) ## Este es el plan!
+
+
+mod_eq = modIRT(coef=list(forma1$coef, forma2$coef, forma3$coef, forma4$coef),
+       var = list(forma1$var,forma2$var,forma3$var, forma4$var),
+       names = c("f1","f2","f3", "f4"))
+
+
+
+eq_vert = alldirec(mods = mod_eq, method = "mean-sigma")
+
+summary(eq_vert)
+
+
+## Por ejemplo: si alguien en el grado dos tiene un theta = -1, eso tiene como equivalencia en la prueba 1.
+
+0.90743*-1 +1.82536
+
+## Por ejemplo: si alguien en el grado dos tiene un theta = 1, eso tiene como equivalencia en la prueba 3.
+
+0.77110*1 -0.80101
+
+
+eq_vert_chain <- chainec(r = 3, direclist = eq_vert, f1 = "f1")
+
+summary(eq_vert_chain) ## A=0.42098, B=2.04266
+
+
+score(eq_vert_chain, method = "OSE")
+
+
+
+eq_vert_chain <- chainec(r = 3, direclist = eq_vert) ## Entre el 2 y el 4.
+summary(eq_vert_chain) ## A=0.71208, B=1.93951
+
+
+
+eq_vert_chain = chainec(r = 3, direclist = eq_vert, f1 = "f3") ##  Si quisiéramos entre el 1 y el 3
+summary(eq_vert_chain) # A=0.44, B=1.58
+
+## Con esto en mente qué podríamos decir?
+
+```
+
